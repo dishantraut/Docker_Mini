@@ -1,0 +1,64 @@
+1. Common Network 
+docker network create compsan_net
+
+
+2. Common Volume 
+docker volume create compsan_vol
+
+
+3. Common + Linked (Adminer & MySQL) containers 
+docker run -d -p 3306 \
+--net compsan_net \
+--name compsan_mysql \
+-e MYSQL_USER=compsan \
+-e MYSQL_PASSWORD=compsan \
+-e MYSQL_ROOT_PASSWORD=root \
+-e MYSQL_DATABASE=OMNICOMP_BECH_QA \
+-v compsan_vol:/var/lib/mysql \
+-v /etc/localtime:/etc/localtime:ro \
+mysql:latest
+
+docker run -d -p 8081:8080 \
+--restart=always \
+--network=compsan_net \
+--name=compsan_adminer \
+-e ADMINER_DEFAULT_SERVER=compsan_mysql \
+adminer:latest
+
+
+4. write yaml file
+version: "3"
+services:
+  # * Portal
+  website:
+    image: compsan/py311:flask
+    ports:
+      - "4042"
+    volumes:
+      - ./:/usr/src/app:rw
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - net_qa
+    command: gunicorn --log-level debug --reload -n base --bind 0.0.0.0:4042 omnicomp:app
+    restart: always
+
+  # * Load Blancing / Reverse Proxy
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./ssl:/ssl/:ro
+      - /etc/localtime:/etc/localtime:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - net_qa
+    depends_on:
+      - website
+    ports:
+      - "81:80"
+      - "444:443"
+
+# * Networks
+networks:
+  net_qa:
+    name: compsan_net
+    external: true
